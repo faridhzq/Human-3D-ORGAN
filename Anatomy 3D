@@ -98,4 +98,4 @@ function loop(){requestAnimationFrame(loop);controls.update();renderer.render(sc
 </script>
 </body>
 </html>'''
-p=Path("/mnt/data/anatomia_3d_v2.html");p.write_text(html,encoding="utf-8");print(p)
+p=Path("/mnt/data/index.html");p.write_text(html,encoding="utf-8");print(p)
