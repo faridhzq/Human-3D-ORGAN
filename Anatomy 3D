@@ -1,1 +1,283 @@
+from pathlib import Path
 
+html = r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Anatomy 3D — Interactive Human Body</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#050914;color:#eef4ff}
+#app{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.topbar{position:fixed;top:0;left:0;right:0;height:68px;display:flex;align-items:center;gap:12px;padding:10px 14px;background:linear-gradient(180deg,rgba(5,9,20,.96),rgba(5,9,20,.72),transparent);z-index:5}
+.brand{font-weight:800;letter-spacing:.3px;white-space:nowrap}
+.brand small{display:block;font-size:10px;color:#8fa4c7;font-weight:500;margin-top:2px}
+.search{margin-left:auto;width:min(360px,48vw);position:relative}
+.search input{width:100%;height:42px;border:1px solid #263552;border-radius:13px;background:#10192a;color:white;padding:0 40px 0 14px;outline:none}
+.search span{position:absolute;right:13px;top:11px;color:#8294b5}
+.panel{position:fixed;z-index:6;left:16px;top:82px;width:min(330px,calc(100vw - 32px));max-height:calc(100vh - 100px);overflow:auto;background:rgba(10,17,31,.91);border:1px solid #263552;border-radius:18px;backdrop-filter:blur(16px);box-shadow:0 18px 55px rgba(0,0,0,.38);padding:16px}
+.panel.hidden{display:none}
+.close{float:right;border:0;background:#1a263b;color:#b9c8df;width:30px;height:30px;border-radius:9px;font-size:18px}
+.organ-title{font-size:24px;font-weight:800;margin:3px 38px 4px 0}
+.system{font-size:12px;color:#78b9ff;margin-bottom:12px}
+.description{font-size:14px;line-height:1.55;color:#cbd6e9}
+.fact{margin-top:14px;padding:12px;border-radius:12px;background:#111e32;border:1px solid #22334e;font-size:12px;color:#b9c9e2}
+.controls{position:fixed;z-index:4;right:16px;bottom:16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:420px}
+.btn{border:1px solid #2b3c5a;background:rgba(12,21,37,.9);color:#dce7f8;border-radius:12px;padding:10px 13px;font-weight:700;font-size:12px;backdrop-filter:blur(10px)}
+.btn:active{transform:scale(.97)}
+.hint{position:fixed;left:50%;bottom:17px;transform:translateX(-50%);z-index:3;background:rgba(9,15,27,.78);border:1px solid #23334f;padding:9px 13px;border-radius:12px;color:#91a4c4;font-size:11px;pointer-events:none}
+.legend{position:fixed;right:16px;top:82px;z-index:3;background:rgba(10,17,31,.8);border:1px solid #263552;border-radius:14px;padding:11px 13px;font-size:11px;color:#9eb0cb}
+.legend b{color:#eaf2ff}
+#loading{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#050914}
+.loader{text-align:center;color:#b7c7e1}.spinner{width:38px;height:38px;border:3px solid #263552;border-top-color:#66b7ff;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;top:78px;transform:translateX(-50%);z-index:10;background:#142238;border:1px solid #315078;color:#dbe9ff;padding:9px 13px;border-radius:11px;font-size:12px;display:none}
+@media(max-width:700px){
+ .topbar{height:62px;padding:9px 10px}.brand{font-size:14px}.brand small{display:none}.search{width:42px}.search input{width:42px;padding:0;opacity:0;cursor:pointer}.search:after{content:"⌕";position:absolute;inset:0;display:grid;place-items:center;color:#a9bad4;font-size:22px;pointer-events:none}
+ .legend{display:none}.hint{bottom:76px;font-size:10px;white-space:nowrap}.controls{left:10px;right:10px;bottom:10px;justify-content:center}.btn{padding:9px 11px}
+ .panel{left:10px;top:auto;bottom:64px;width:calc(100vw - 20px);max-height:52vh}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading"><div class="loader"><div class="spinner"></div>Loading Anatomy 3D…</div></div>
+
+<header class="topbar">
+  <div class="brand">🫀 Anatomy 3D <small>Interactive Human Body Explorer</small></div>
+  <div class="search"><input id="search" placeholder="Search an organ…"><span>⌕</span></div>
+</header>
+
+<div class="legend"><b>Explore</b><br>Drag = rotate · Pinch = zoom<br>Tap an organ = details</div>
+<div id="toast" class="toast"></div>
+
+<section id="panel" class="panel hidden">
+  <button class="close" id="close">×</button>
+  <div id="organTitle" class="organ-title">Organ</div>
+  <div id="system" class="system">System</div>
+  <div id="description" class="description"></div>
+  <div id="fact" class="fact"></div>
+</section>
+
+<div class="hint">Drag to rotate • Scroll/pinch to zoom • Tap an organ</div>
+<div class="controls">
+  <button class="btn" id="front">Front</button>
+  <button class="btn" id="reset">Reset</button>
+  <button class="btn" id="skin">Skin</button>
+  <button class="btn" id="systems">Systems</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const data={
+"Brain": ["Nervous","The brain is the main control centre of the nervous system. It receives sensory information, processes it and coordinates movement, behaviour, memory and many automatic body functions.","Location: cranial cavity • Major regions include cerebrum, cerebellum and brainstem."],
+"Heart": ["Circulatory","The heart is a muscular pump that keeps blood moving through the pulmonary and systemic circuits. It has four chambers and valves that maintain one-way flow.","Location: central chest, between the lungs • Beats continuously to maintain circulation."],
+"Lung (L)": ["Respiratory","The left lung exchanges oxygen and carbon dioxide between the air in the alveoli and the blood in nearby capillaries.","Location: left side of chest • Slightly smaller than the right lung because of the heart."],
+"Lung (R)": ["Respiratory","The right lung performs gas exchange and is divided into three lobes. Air reaches the alveoli through branching airways.","Location: right side of chest • Usually has three lobes."],
+"Trachea": ["Respiratory","The trachea is the main airway connecting the larynx to the bronchi. Cartilage rings help keep it open during breathing.","Location: neck and upper chest • Divides into the right and left main bronchi."],
+"Diaphragm": ["Respiratory / Muscular","The diaphragm is the main muscle of breathing. When it contracts it moves downward, increasing chest volume and drawing air into the lungs.","Location: beneath the lungs • Separates thoracic and abdominal cavities."],
+"Liver": ["Digestive","The liver performs hundreds of metabolic functions, including processing nutrients, producing bile and helping detoxify substances.","Location: upper right abdomen • One of the body's largest internal organs."],
+"Stomach": ["Digestive","The stomach stores food and mechanically mixes it with acidic digestive fluid. It begins important stages of protein digestion.","Location: upper left abdomen • Connects the oesophagus to the small intestine."],
+"Small intestine": ["Digestive","Most chemical digestion and nutrient absorption occurs in the small intestine. Its lining has folds, villi and microvilli that create a large absorptive surface.","Location: central abdomen • Divided into duodenum, jejunum and ileum."],
+"Large intestine": ["Digestive","The large intestine absorbs water and electrolytes and compacts the remaining material into faeces.","Location: frames much of the small intestine • Includes the colon and rectum."],
+"Pancreas": ["Digestive / Endocrine","The pancreas releases digestive enzymes into the small intestine and hormones such as insulin and glucagon into the blood.","Location: behind the stomach • Important for digestion and blood-glucose regulation."],
+"Gallbladder": ["Digestive","The gallbladder stores and concentrates bile made by the liver, releasing it into the small intestine to help digest fats.","Location: beneath the liver."],
+"Esophagus": ["Digestive","The oesophagus is a muscular tube that moves swallowed food from the throat to the stomach using coordinated muscular contractions.","Location: behind the trachea • Uses peristalsis."],
+"Kidney (L)": ["Urinary","The left kidney filters blood, removes metabolic wastes and helps regulate water, electrolytes, blood pressure and acid-base balance.","Location: posterior upper abdomen on the left."],
+"Kidney (R)": ["Urinary","The right kidney performs the same core filtration and regulatory functions as the left kidney.","Location: posterior upper abdomen on the right, slightly lower than the left in many people."],
+"Urinary bladder": ["Urinary","The urinary bladder temporarily stores urine produced by the kidneys until it is released through the urethra.","Location: pelvic cavity • Its muscular wall contracts during urination."],
+"Ureter (L)": ["Urinary","The left ureter carries urine from the left kidney to the urinary bladder.","Location: posterior abdominal and pelvic region • Urine moves through peristaltic contractions."],
+"Ureter (R)": ["Urinary","The right ureter carries urine from the right kidney to the urinary bladder.","Location: posterior abdominal and pelvic region • Connects kidney and bladder."],
+"Spleen": ["Lymphatic / Immune","The spleen filters blood, helps recycle old red blood cells and contributes to immune responses.","Location: upper left abdomen near the stomach."],
+"Thymus": ["Lymphatic / Immune","The thymus is important for T-lymphocyte maturation, especially during childhood and adolescence.","Location: upper chest behind the sternum."],
+"Bone marrow": ["Skeletal / Blood","Bone marrow is soft tissue inside certain bones where blood cells are produced. Red marrow is a major site of haematopoiesis.","Location: inside selected bones, including parts of the pelvis and long bones."],
+"Thyroid": ["Endocrine","The thyroid produces hormones that help regulate metabolic rate, growth and development.","Location: front of lower neck, around the trachea."],
+"Adrenal (L)": ["Endocrine","The left adrenal gland produces hormones involved in stress responses, metabolism, blood pressure and salt-water balance.","Location: on top of the left kidney."],
+"Adrenal (R)": ["Endocrine","The right adrenal gland produces hormones involved in stress responses, metabolism, blood pressure and salt-water balance.","Location: on top of the right kidney."],
+"Pituitary gland": ["Endocrine","The pituitary is a small endocrine gland that releases hormones controlling growth, reproduction, water balance and the activity of other endocrine glands.","Location: base of the brain."],
+"Ovary (L)": ["Reproductive","The left ovary produces and releases ova and secretes reproductive hormones such as oestrogen and progesterone.","Location: left side of the pelvis."],
+"Ovary (R)": ["Reproductive","The right ovary produces and releases ova and secretes reproductive hormones such as oestrogen and progesterone.","Location: right side of the pelvis."],
+"Skin": ["Integumentary","Skin forms the body's external protective barrier. It helps prevent water loss, detects sensations and contributes to temperature regulation.","Location: covers the external surface of the body."],
+"Femur": ["Skeletal","The femur is the thigh bone and the longest, strongest major bone in the human body. It supports body weight and participates in movement.","Location: thigh."],
+"Spine": ["Skeletal","The vertebral column supports the body, protects the spinal cord and allows controlled movement of the trunk.","Location: posterior midline of the body."],
+"Muscle (L)": ["Muscular","Skeletal muscle produces voluntary movement, maintains posture and contributes to heat production.","Location: represented by major muscle masses on the left side."],
+"Muscle (R)": ["Muscular","Skeletal muscle produces voluntary movement, maintains posture and contributes to heat production.","Location: represented by major muscle masses on the right side."]
+};
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x050914);
+const camera=new THREE.PerspectiveCamera(43,innerWidth/innerHeight,.1,100);
+camera.position.set(0,0.7,8.8);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.getElementById("app").appendChild(renderer.domElement);
+
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=.07; controls.target.set(0,.1,0);
+controls.minDistance=4.2; controls.maxDistance=13;
+controls.enablePan=false;
+
+scene.add(new THREE.HemisphereLight(0xbdd9ff,0x111827,2.2));
+const key=new THREE.DirectionalLight(0xffffff,2.4); key.position.set(4,7,6); scene.add(key);
+const rim=new THREE.DirectionalLight(0x6ea8ff,1.4); rim.position.set(-5,3,-5); scene.add(rim);
+
+const body=new THREE.Group(); scene.add(body);
+const clickable=[];
+const skinMat=new THREE.MeshPhysicalMaterial({color:0xc77f6f,transparent:true,opacity:.14,roughness:.72,side:THREE.DoubleSide});
+let skinVisible=true;
+
+function mat(color,metal=0,rough=.55){
+ return new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal,transparent:true});
+}
+function mesh(name,geo,material,pos,scale=[1,1,1]){
+ const m=new THREE.Mesh(geo,material); m.name=name; m.position.set(...pos); m.scale.set(...scale); body.add(m); clickable.push(m); return m;
+}
+function sphere(name,pos,scale,color){
+ return mesh(name,new THREE.SphereGeometry(1,32,20),mat(color,0,.45),pos,scale);
+}
+function capsule(name,pos,scale,color,rot=[0,0,0]){
+ const m=mesh(name,new THREE.CapsuleGeometry(.5,1,12,24),mat(color,0,.5),pos,scale); m.rotation.set(...rot); return m;
+}
+function tube(name,a,b,r,color){
+ const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),v=new THREE.Vector3().subVectors(B,A),len=v.length();
+ const g=new THREE.CylinderGeometry(r,r,len,18);
+ const m=mesh(name,g,mat(color,0,.55),[0,0,0]);
+ m.position.copy(A).add(B).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());
+ return m;
+}
+function torus(name,pos,major,minor,color,rot=[0,0,0]){
+ const m=mesh(name,new THREE.TorusGeometry(major,minor,16,40),mat(color,0,.5),pos); m.rotation.set(...rot); return m;
+}
+
+// Stylised anatomical body silhouette
+sphere("Skin",[0,0,0],[1.18,2.95,.62],0xc77f6f);
+sphere("Skin",[0,3.55,0],[.72,.82,.58],0xc77f6f);
+capsule("Skin",[-.95,-.1,0],[.42,2.35,.45],0xc77f6f,[0,0,-.06]);
+capsule("Skin",[.95,-.1,0],[.42,2.35,.45],0xc77f6f,[0,0,.06]);
+capsule("Skin",[-.5,-3.0,0],[.5,2.05,.5],0xc77f6f,[0,0,.04]);
+capsule("Skin",[.5,-3.0,0],[.5,2.05,.5],0xc77f6f,[0,0,-.04]);
+
+// Brain
+sphere("Brain",[0,3.58,.08],[.58,.56,.46],0xd98fba);
+torus("Brain",[0,3.58,.47],.31,.07,0xf0b7d0,[Math.PI/2,0,0]);
+
+// Heart + vessels
+sphere("Heart",[.08,1.48,.25],[.38,.5,.3],0xd92f45);
+tube("Aorta",[.05,1.85,.24],[.05,2.32,.24],.075,0xc72f43);
+tube("Vessel L",[-.04,1.83,.23],[-.48,2.15,.18],.055,0x477ed0);
+tube("Vessel R",[.13,1.83,.23],[.52,2.12,.18],.055,0x477ed0);
+
+// Lungs
+sphere("Lung (L)",[-.55,1.48,.03],[.43,.82,.32],0xb34e68);
+sphere("Lung (R)",[.55,1.48,.03],[.43,.88,.32],0xb34e68);
+tube("Trachea",[0,2.65,.06],[0,1.95,.06],.105,0xd7dbe5);
+tube("Bronchus L",[0,2.08,.06],[-.43,1.85,.06],.06,0xd7dbe5);
+tube("Bronchus R",[0,2.08,.06],[.43,1.85,.06],.06,0xd7dbe5);
+capsule("Diaphragm",[0,.55,.02],[.95,.12,.38],0xe3b34e);
+
+// Digestive organs
+sphere("Liver",[.43,.2,.08],[.82,.45,.38],0x7b4938);
+sphere("Stomach",[-.42,.02,.18],[.42,.57,.3],0xc96f56);
+tube("Esophagus",[0,1.95,.08],[-.35,.35,.16],.06,0xd9a08d);
+for(let i=0;i<6;i++){
+ const y=.15-i*.14, x=-.2+(i%2)*.38;
+ torus("Small intestine",[x,y,.2],.22,.055,0xe6a07c,[Math.PI/2,0,0]);
+}
+torus("Large intestine",[0,-.05,.12],.72,.075,0x9c6a50,[Math.PI/2,0,0]);
+sphere("Pancreas",[.05,.12,.35],[.52,.11,.12],0xe6b17a);
+sphere("Gallbladder",[.2,.25,.32],[.12,.18,.1],0x6d9d56);
+
+// Urinary
+sphere("Kidney (L)",[-.62,-.28,-.05],[.25,.4,.18],0x8e3e42);
+sphere("Kidney (R)",[.62,-.28,-.05],[.25,.4,.18],0x8e3e42);
+tube("Ureter (L)",[-.62,-.58,.02],[-.24,-1.12,.12],.035,0xe4c27b);
+tube("Ureter (R)",[.62,-.58,.02],[.24,-1.12,.12],.035,0xe4c27b);
+sphere("Urinary bladder",[0,-1.25,.12],[.32,.28,.22],0x8faed4);
+
+// Lymphatic/endocrine
+sphere("Spleen",[-.85,.02,-.02],[.22,.38,.18],0x714e88);
+sphere("Thymus",[0,1.92,.24],[.25,.28,.12],0xd88e9b);
+sphere("Thyroid",[0,2.55,.2],[.3,.14,.12],0xe1a64d);
+sphere("Adrenal (L)",[-.62,.18,-.04],[.1,.09,.08],0xf1c75a);
+sphere("Adrenal (R)",[.62,.18,-.04],[.1,.09,.08],0xf1c75a);
+sphere("Pituitary gland",[0,3.0,.34],[.1,.09,.09],0xf1c75a);
+
+// Skeletal highlights
+for(let y=2.8;y>-2.1;y-=.25) sphere("Spine",[0,y,-.43],[.09,.1,.09],0xe5e0cf);
+capsule("Femur",[-.5,-2.75,-.08],[.16,1.45,.16],0xe5e0cf);
+capsule("Femur",[.5,-2.75,-.08],[.16,1.45,.16],0xe5e0cf);
+
+// Muscles
+capsule("Muscle (L)",[-.95,-.35,.38],[.18,.9,.18],0xa73542);
+capsule("Muscle (R)",[.95,-.35,.38],[.18,.9,.18],0xa73542);
+
+// Ovaries (included as educational female reproductive structures)
+sphere("Ovary (L)",[-.28,-.95,.25],[.12,.12,.1],0xd66a9c);
+sphere("Ovary (R)",[.28,-.95,.25],[.12,.12,.1],0xd66a9c);
+
+function setSkin(){
+ skinVisible=!skinVisible;
+ body.traverse(o=>{ if(o.isMesh && o.name==="Skin"){o.material.opacity=skinVisible?.14:0.02;}});
+ toast(skinVisible?"Skin layer shown":"Skin layer hidden — explore internal organs");
+}
+function select(name){
+ const d=data[name]; if(!d)return;
+ document.getElementById("organTitle").textContent=name;
+ document.getElementById("system").textContent=d[0];
+ document.getElementById("description").textContent=d[1];
+ document.getElementById("fact").textContent=d[2];
+ document.getElementById("panel").classList.remove("hidden");
+ // highlight
+ clickable.forEach(o=>{if(o.material && o.name!=="Skin"){o.material.emissive?.set(0x000000);}});
+ const target=clickable.find(o=>o.name===name);
+ if(target && target.material.emissive) target.material.emissive.set(0x244b72);
+}
+document.getElementById("close").onclick=()=>document.getElementById("panel").classList.add("hidden");
+document.getElementById("skin").onclick=setSkin;
+document.getElementById("front").onclick=()=>{body.rotation.y=0;camera.position.set(0,.5,8.8);controls.target.set(0,.1,0);controls.update()};
+document.getElementById("reset").onclick=()=>{body.rotation.set(0,0,0);camera.position.set(0,.7,8.8);controls.target.set(0,.1,0);controls.update();};
+document.getElementById("systems").onclick=()=>toast("Organs are colour-coded by body system.");
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.style.display="block";clearTimeout(window.tt);window.tt=setTimeout(()=>e.style.display="none",1800)}
+
+const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
+function pointerDown(e){
+ const r=renderer.domElement.getBoundingClientRect();
+ pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1;
+ raycaster.setFromCamera(pointer,camera);
+ const hits=raycaster.intersectObjects(clickable,false);
+ if(hits.length){select(hits[0].object.name);}
+}
+renderer.domElement.addEventListener("pointerup",pointerDown);
+
+const search=document.getElementById("search");
+search.addEventListener("input",()=>{
+ const q=search.value.trim().toLowerCase();
+ if(!q)return;
+ const key=Object.keys(data).find(k=>k.toLowerCase().includes(q));
+ if(key)select(key);
+});
+search.addEventListener("focus",()=>{if(innerWidth<=700){search.style.width="min(280px,70vw)";search.style.opacity="1";search.style.padding="0 40px 0 14px";}});
+search.addEventListener("blur",()=>{if(innerWidth<=700 && !search.value){search.style.width="42px";search.style.opacity="0";search.style.padding="0";}});
+
+addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+});
+setTimeout(()=>document.getElementById("loading").style.display="none",650);
+
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)}
+animate();
+</script>
+</body>
+</html>'''
+
+p=Path("/mnt/data/Anatomy_3D_Interactive.html")
+p.write_text(html,encoding="utf-8")
+print(p)
